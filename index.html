@@ -226,6 +226,7 @@ video {
     <button id="btnCopy" disabled>📋 Copiar Link</button>
     <button id="btnToggleVideo" disabled>👁️ Ocultar Meu Vídeo</button>
     <button id="btnRecord" disabled>⏺️ Gravar Vídeo</button>
+    <button id="btnToggleChat">💬 Ocultar Chat</button>
     <div class="status" id="status">Inicializando conexão...</div>
     <div id="link"></div>
     
@@ -268,6 +269,8 @@ const btnRecord = document.getElementById("btnRecord");
 const chatMessages = document.getElementById("chatMessages");
 const messageInput = document.getElementById("messageInput");
 const btnSend = document.getElementById("btnSend");
+const btnToggleChat = document.getElementById("btnToggleChat");
+const chatBox = document.getElementById("chat");
 
 let peerId;
 let localStream;
@@ -281,6 +284,7 @@ let isRecording = false;
 let mediaRecorder = null;
 let recordedChunks = [];
 let dataConnection = null;
+let chatVisible = true;
 
 const peer = new Peer();
 
@@ -342,6 +346,15 @@ function sendMessage(text) {
 
 /* Receber mensagem no chat */
 function receiveMessage(text) {
+    // Se o chat estiver oculto, mostrar automaticamente ao receber mensagem
+    if (!chatVisible) {
+        chatBox.style.display = 'flex';
+        chatVisible = true;
+        if (btnToggleChat) {
+            btnToggleChat.textContent = '💬 Ocultar Chat';
+        }
+    }
+
     const msgDiv = document.createElement('div');
     msgDiv.className = 'message received';
     msgDiv.textContent = text;
@@ -539,6 +552,13 @@ messageInput.addEventListener('keypress', (e) => {
         sendMessage(messageInput.value);
     }
 });
+
+/* Toggle Chat */
+btnToggleChat.onclick = () => {
+    chatVisible = !chatVisible;
+    chatBox.style.display = chatVisible ? 'flex' : 'none';
+    btnToggleChat.textContent = chatVisible ? '💬 Ocultar Chat' : '💬 Mostrar Chat';
+};
 
 </script>
 
