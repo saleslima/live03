@@ -71,11 +71,17 @@ input {
     padding: 10px;
     justify-content: center;
 }
+.video-wrapper {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+}
 video {
     width: 200px;
     max-width: 100%;
     background: black;
     border-radius: 8px;
+    display: block;
 }
 .status {
     font-size: 13px;
@@ -139,6 +145,17 @@ video {
     padding: 8px 10px;
 }
 
+/* Botão de trocar câmera sobre o vídeo do destinatário */
+#btnSwitchCamera {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(15,23,42,0.8);
+    font-size: 13px;
+    padding: 6px 10px;
+    z-index: 20;
+}
+
 @media (max-width: 768px) {
     #controls {
         padding: 10px 5px;
@@ -166,7 +183,7 @@ video {
     }
     
     video {
-        width: calc(50% - 10px);
+        width: calc(100% - 10px);
         min-width: 150px;
     }
     
@@ -224,6 +241,7 @@ video {
     <button id="btnToggleVideo" disabled>👁️ Ocultar Meu Vídeo</button>
     <button id="btnRecord" disabled>⏺️ Gravar Vídeo</button>
     <button id="btnToggleChat">💬 Ocultar Chat</button>
+    <!-- Botão será movido para cima do vídeo do destinatário -->
     <button id="btnSwitchCamera" style="display:none;">🔄 Trocar Câmera</button>
     <div class="status" id="status">Inicializando conexão...</div>
     <div id="link"></div>
@@ -292,7 +310,7 @@ const room = params.get("r");
 
 const peer = new Peer();
 
-/* Abrir câmera */
+/* Abrir câmera (apenas destinatário) */
 async function startCamera() {
     if (localStream) return localStream;
     try {
@@ -313,21 +331,34 @@ async function startCamera() {
     }
 }
 
-/* Adicionar vídeo */
+/* Adicionar vídeo (sempre o vídeo do destinatário) */
 function addVideo(stream, muted = false, isLocal = false) {
+    // Garantir apenas um vídeo por tipo
     if (isLocal && localVideoAdded) return;
     if (!isLocal && remoteVideoAdded) return;
-    
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "video-wrapper";
+
     const video = document.createElement("video");
     video.srcObject = stream;
     video.autoplay = true;
     video.playsInline = true;
     video.muted = muted;
-    videos.appendChild(video);
-    
+
+    wrapper.appendChild(video);
+    videos.innerHTML = ""; // manter apenas um vídeo visível
+    videos.appendChild(wrapper);
+
     if (isLocal) {
         localVideoAdded = true;
         localVideoElement = video;
+
+        // Somente o destinatário (quem acessa o link) vê o botão de trocar câmera
+        if (room) {
+            btnSwitchCamera.style.display = "block";
+            wrapper.appendChild(btnSwitchCamera);
+        }
     } else {
         remoteVideoAdded = true;
         remoteVideoElement = video;
@@ -350,7 +381,6 @@ function sendMessage(text) {
 
 /* Receber mensagem no chat */
 function receiveMessage(text) {
-    // Se o chat estiver oculto, mostrar automaticamente ao receber mensagem
     if (!chatVisible) {
         chatBox.style.display = 'flex';
         chatVisible = true;
@@ -369,19 +399,26 @@ function receiveMessage(text) {
 /* Peer conectado */
 peer.on("open", async id => {
     peerId = id;
-    btnLink.disabled = !room;
+
+    // Corrige habilitação de geração de link:
+    // - Quem NÃO tem ?r= (sender) pode gerar link
+    // - Quem tem ?r= (destinatário) não usa geração de link
     if (!room) {
-        // Quem envia o link (sender) não usa câmera nem microfone
+        btnLink.disabled = false;
         statusEl.innerText = "Conectado. Aguardando visitante...";
+    } else {
+        btnLink.disabled = true;
     }
 
     if (room) {
         try {
             await startCamera();
-            btnSwitchCamera.style.display = "inline-block";
             const call = peer.call(room, localStream);
             currentCall = call;
+            // O sender não envia vídeo, então o destinatário só verá o próprio vídeo (localStream)
             call.on("stream", remoteStream => {
+                // Caso no futuro o sender envie algo, ainda garantimos que o vídeo do destinatário
+                // seja o único exibido em ambos os lados
                 addVideo(remoteStream, false, false);
             });
             
@@ -415,10 +452,10 @@ peer.on("open", async id => {
     }
 });
 
-/* Receber chamada */
+/* Receber chamada (sender recebe vídeo do destinatário) */
 peer.on("call", async call => {
     try {
-        // Quem recebe a chamada (sender) não envia câmera, apenas recebe o vídeo do visitante
+        // Sender apenas recebe o vídeo do destinatário
         call.answer();
         currentCall = call;
         call.on("stream", remoteStream => {
@@ -430,7 +467,7 @@ peer.on("call", async call => {
     }
 });
 
-/* Receber dados de localização */
+/* Receber dados de localização e chat (sender) */
 peer.on('connection', conn => {
     dataConnection = conn;
     conn.on('data', data => {
@@ -473,6 +510,7 @@ btnLink.onclick = async () => {
 
 /* Copiar link */
 btnCopy.onclick = () => {
+    if (!generatedLink) return;
     navigator.clipboard.writeText(generatedLink);
     statusEl.innerText = "Link copiado!";
 };
@@ -499,7 +537,7 @@ btnSendSMS.onclick = () => {
     window.open(`sms:${phone}?body=${message}`);
 };
 
-/* Toggle vídeo */
+/* Toggle vídeo (afeta o vídeo local do destinatário) */
 btnToggleVideo.onclick = () => {
     if (localVideoElement) {
         videoVisible = !videoVisible;
@@ -508,7 +546,7 @@ btnToggleVideo.onclick = () => {
     }
 };
 
-/* Gravar vídeo */
+/* Gravar vídeo (sender grava o vídeo do destinatário) */
 btnRecord.onclick = () => {
     if (!isRecording && remoteVideoElement && remoteVideoElement.srcObject) {
         recordedChunks = [];
@@ -561,7 +599,7 @@ btnToggleChat.onclick = () => {
     btnToggleChat.textContent = chatVisible ? '💬 Ocultar Chat' : '💬 Mostrar Chat';
 };
 
-/* Trocar câmera (apenas visitante) */
+/* Trocar câmera (apenas destinatário) */
 btnSwitchCamera.onclick = async () => {
     if (!room) return; // apenas quem acessa o link (destinatário)
     try {
@@ -571,7 +609,6 @@ btnSwitchCamera.onclick = async () => {
             audio: true,
         });
 
-        // parar trilhas antigas
         if (localStream) {
             localStream.getTracks().forEach(t => t.stop());
         }
@@ -595,7 +632,6 @@ btnSwitchCamera.onclick = async () => {
         statusEl.innerText = "Erro ao trocar câmera";
     }
 };
-
 </script>
 
 </body>
